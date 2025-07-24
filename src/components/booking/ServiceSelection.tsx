@@ -1,17 +1,9 @@
-import { useState } from 'react'
-import { Scissors, Palette, Sparkles, Clock, DollarSign } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Scissors, Palette, Sparkles, Clock, DollarSign, Heart } from 'lucide-react'
 import { Card, CardContent } from '../ui/card'
 import { Badge } from '../ui/badge'
-
-interface Service {
-  id: string
-  name: string
-  description: string
-  duration: number
-  price: number
-  category: string
-  icon: any
-}
+import { supabase, Service } from '../../lib/supabase'
+import { toast } from 'sonner'
 
 interface ServiceSelectionProps {
   selectedService: Service | null
@@ -19,87 +11,75 @@ interface ServiceSelectionProps {
 }
 
 export default function ServiceSelection({ selectedService, onServiceSelect }: ServiceSelectionProps) {
-  const services: Service[] = [
-    {
-      id: 'haircut-women',
-      name: 'Women\'s Haircut',
-      description: 'Precision cut with wash, style, and consultation',
-      duration: 60,
-      price: 85,
-      category: 'Cut',
-      icon: Scissors
-    },
-    {
-      id: 'haircut-men',
-      name: 'Men\'s Haircut',
-      description: 'Classic or modern cut with wash and style',
-      duration: 45,
-      price: 65,
-      category: 'Cut',
-      icon: Scissors
-    },
-    {
-      id: 'color-full',
-      name: 'Full Color',
-      description: 'Complete color transformation with toner and style',
-      duration: 180,
-      price: 150,
-      category: 'Color',
-      icon: Palette
-    },
-    {
-      id: 'highlights',
-      name: 'Highlights',
-      description: 'Partial or full highlights with toner and style',
-      duration: 150,
-      price: 120,
-      category: 'Color',
-      icon: Palette
-    },
-    {
-      id: 'color-touch-up',
-      name: 'Color Touch-Up',
-      description: 'Root touch-up and refresh existing color',
-      duration: 90,
-      price: 95,
-      category: 'Color',
-      icon: Palette
-    },
-    {
-      id: 'blowout',
-      name: 'Blowout & Style',
-      description: 'Professional wash, blow dry, and styling',
-      duration: 45,
-      price: 45,
-      category: 'Style',
-      icon: Sparkles
-    },
-    {
-      id: 'deep-treatment',
-      name: 'Deep Conditioning Treatment',
-      description: 'Intensive hair treatment for damaged or dry hair',
-      duration: 60,
-      price: 65,
-      category: 'Treatment',
-      icon: Sparkles
-    },
-    {
-      id: 'keratin',
-      name: 'Keratin Treatment',
-      description: 'Smoothing treatment to reduce frizz and add shine',
-      duration: 240,
-      price: 300,
-      category: 'Treatment',
-      icon: Sparkles
-    }
-  ]
-
-  const categories = ['All', 'Cut', 'Color', 'Style', 'Treatment']
+  const [services, setServices] = useState<Service[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState('All')
+
+  const fetchServices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .eq('is_active', true)
+        .order('category', { ascending: true })
+        .order('name', { ascending: true })
+
+      if (error) {
+        toast.error('Failed to load services')
+        console.error('Error fetching services:', error)
+        return
+      }
+
+      setServices(data || [])
+    } catch (error) {
+      toast.error('Failed to load services')
+      console.error('Error fetching services:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchServices()
+  }, [])
+
+  const getServiceIcon = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'cut':
+        return Scissors
+      case 'color':
+        return Palette
+      case 'style':
+        return Sparkles
+      case 'treatment':
+        return Heart
+      default:
+        return Scissors
+    }
+  }
+
+  const categories = ['All', ...Array.from(new Set(services.map(s => s.category)))]
 
   const filteredServices = selectedCategory === 'All' 
     ? services 
     : services.filter(service => service.category === selectedCategory)
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-8 w-16 bg-muted animate-pulse rounded-full" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -120,7 +100,7 @@ export default function ServiceSelection({ selectedService, onServiceSelect }: S
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredServices.map((service) => {
-          const Icon = service.icon
+          const Icon = getServiceIcon(service.category)
           const isSelected = selectedService?.id === service.id
 
           return (
@@ -158,7 +138,7 @@ export default function ServiceSelection({ selectedService, onServiceSelect }: S
                       </div>
                       <div className="flex items-center space-x-1 font-semibold text-foreground">
                         <DollarSign className="h-4 w-4" />
-                        <span>{service.price}</span>
+                        <span>${service.price}</span>
                       </div>
                     </div>
                   </div>
@@ -168,6 +148,12 @@ export default function ServiceSelection({ selectedService, onServiceSelect }: S
           )
         })}
       </div>
+
+      {filteredServices.length === 0 && !loading && (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No services found in this category.</p>
+        </div>
+      )}
 
       {selectedService && (
         <div className="mt-6 p-4 bg-primary/10 rounded-lg border border-primary/20">
@@ -184,4 +170,3 @@ export default function ServiceSelection({ selectedService, onServiceSelect }: S
     </div>
   )
 }
-

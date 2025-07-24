@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { blink } from './blink/client'
+import { useAuth } from './hooks/useAuth'
 import { Toaster } from './components/ui/sonner'
 
 // Pages
 import HomePage from './pages/HomePage'
 import BookingPage from './pages/BookingPage'
 import ClientPortalPage from './pages/ClientPortalPage'
+import AuthPage from './pages/AuthPage'
 
 // Components
 import Header from './components/layout/Header'
@@ -14,16 +14,7 @@ import Footer from './components/layout/Footer'
 import LoadingScreen from './components/ui/LoadingScreen'
 
 function App() {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const unsubscribe = blink.auth.onAuthStateChanged((state) => {
-      setUser(state.user)
-      setLoading(state.isLoading)
-    })
-    return unsubscribe
-  }, [])
+  const { user, loading } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
@@ -36,8 +27,9 @@ function App() {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/book" element={<BookingPage />} />
+            <Route path="/book" element={<BookingPage user={user} />} />
             <Route path="/portal" element={<ClientPortalPage user={user} />} />
+            <Route path="/auth" element={<AuthPage />} />
           </Routes>
         </main>
         <Footer />

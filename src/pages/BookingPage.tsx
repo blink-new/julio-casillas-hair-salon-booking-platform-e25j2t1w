@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -19,7 +20,19 @@ export interface BookingData {
   intakeForm: any
 }
 
-export default function BookingPage() {
+interface BookingPageProps {
+  user: any
+}
+
+export default function BookingPage({ user }: BookingPageProps) {
+  const navigate = useNavigate()
+
+  // Redirect to auth if not logged in when trying to book
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth')
+    }
+  }, [user, navigate])
   const [currentStep, setCurrentStep] = useState(1)
   const [bookingData, setBookingData] = useState<BookingData>({
     service: null,

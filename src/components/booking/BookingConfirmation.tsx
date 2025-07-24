@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Calendar, Clock, User, Scissors, CheckCircle, Loader2 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Separator } from '../ui/separator'
 import { Badge } from '../ui/badge'
-import { blink } from '../../blink/client'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { toast } from 'sonner'
 
 interface BookingConfirmationProps {
@@ -14,30 +16,126 @@ interface BookingConfirmationProps {
 export default function BookingConfirmation({ bookingData }: BookingConfirmationProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isConfirmed, setIsConfirmed] = useState(false)
+  const { user } = useAuth()
+  const navigate = useNavigate()
+
+  const calculateEndTime = (startTime: string, durationMinutes: number) => {
+    const [hours, minutes] = startTime.split(':').map(Number)
+    const startDate = new Date()
+    startDate.setHours(hours, minutes, 0, 0)
+    
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000)
+    
+    return `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}:00`
+  }
 
   const handleConfirmBooking = async () => {
+    if (!user) {
+      toast.error('Please sign in to book an appointment')
+      navigate('/auth')
+      return
+    }
+
     setIsSubmitting(true)
     
     try {
-      // Create the booking record in the database
-      const booking = await blink.db.bookings.create({
-        serviceId: bookingData.service.id,
-        serviceName: bookingData.service.name,
-        servicePrice: bookingData.service.price,
-        serviceDuration: bookingData.service.duration,
-        staffId: bookingData.staff.id,
-        staffName: bookingData.staff.name,
-        appointmentDate: bookingData.dateTime.date.toISOString(),
-        appointmentTime: bookingData.dateTime.time,
-        clientFirstName: bookingData.clientInfo.firstName,
-        clientLastName: bookingData.clientInfo.lastName,
-        clientEmail: bookingData.clientInfo.email,
-        clientPhone: bookingData.clientInfo.phone,
-        emergencyContact: bookingData.clientInfo.emergencyContact || '',
-        hairHistory: JSON.stringify(bookingData.intakeForm),
-        status: 'confirmed',
-        createdAt: new Date().toISOString()
-      })
+      // First, ensure client record exists
+      const { data: existingClient, error: clientCheckError } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('id', user.id)
+        .single()
+
+      if (clientCheckError && clientCheckError.code === 'PGRST116') {
+        // Client doesn't exist, create one
+        const { error: clientCreateError } = await supabase
+          .from('clients')
+          .insert({
+            id: user.id,
+            first_name: bookingData.clientInfo.firstName,
+            last_name: bookingData.clientInfo.lastName,
+            email: bookingData.clientInfo.email,
+            phone: bookingData.clientInfo.phone,
+            emergency_contact_name: bookingData.clientInfo.emergencyContact || null,
+            emergency_contact_phone: bookingData.clientInfo.emergencyContactPhone || null
+          })
+
+        if (clientCreateError) {
+          console.error('Error creating client:', clientCreateError)
+          toast.error('Failed to create client profile')
+          return
+        }
+      }
+
+      // Create client intake record if it doesn't exist
+      if (bookingData.intakeForm) {
+        const { error: intakeError } = await supabase
+          .from('client_intake')
+          .upsert({
+            client_id: user.id,
+            hair_type: bookingData.intakeForm.hairType || null,
+            hair_texture: bookingData.intakeForm.hairTexture || null,
+            scalp_condition: bookingData.intakeForm.hairCondition || null,
+            previous_chemical_services: bookingData.intakeForm.previousTreatments || null,
+            current_medications: bookingData.intakeForm.medications || null,
+            allergies: bookingData.intakeForm.allergies?.join(', ') || null,
+            skin_sensitivities: bookingData.intakeForm.scalpSensitivity || null,
+            hair_goals: bookingData.intakeForm.hairGoals || null,
+            lifestyle_factors: bookingData.intakeForm.lifestyle || null,
+            preferred_styling_time: bookingData.intakeForm.stylingTime || null,
+            heat_tool_usage: bookingData.intakeForm.heatTools || null,
+            product_preferences: bookingData.intakeForm.productPreferences || null,
+            budget_range: bookingData.intakeForm.budget || null,
+            referral_source: bookingData.intakeForm.referralSource || null,
+            additional_notes: bookingData.intakeForm.specialRequests || null
+          })
+
+        if (intakeError) {
+          console.error('Error saving intake form:', intakeError)
+          // Don't fail the booking for intake form errors
+        }
+      }
+
+      // Create the appointment
+      const appointmentDate = bookingData.dateTime.date.toISOString().split('T')[0]
+      const startTime = bookingData.dateTime.time
+      const endTime = calculateEndTime(startTime, bookingData.service.duration)
+
+      const { data: appointment, error: appointmentError } = await supabase
+        .from('appointments')
+        .insert({
+          client_id: user.id,
+          staff_id: bookingData.staff.id === 'any' ? null : bookingData.staff.id,
+          service_id: bookingData.service.id,
+          appointment_date: appointmentDate,
+          start_time: startTime,
+          end_time: endTime,
+          status: 'scheduled',
+          total_price: bookingData.service.price,
+          notes: bookingData.intakeForm?.specialRequests || null
+        })
+        .select()
+        .single()
+
+      if (appointmentError) {
+        console.error('Error creating appointment:', appointmentError)
+        toast.error('Failed to book appointment. Please try again.')
+        return
+      }
+
+      // Create appointment service record
+      const { error: serviceError } = await supabase
+        .from('appointment_services')
+        .insert({
+          appointment_id: appointment.id,
+          service_id: bookingData.service.id,
+          price: bookingData.service.price
+        })
+
+      if (serviceError) {
+        console.error('Error creating appointment service:', serviceError)
+        // Don't fail the booking for this
+      }
 
       setIsConfirmed(true)
       toast.success('Appointment booked successfully!')
@@ -87,11 +185,11 @@ export default function BookingConfirmation({ bookingData }: BookingConfirmation
         </Card>
 
         <div className="space-y-2">
-          <Button asChild className="w-full">
-            <a href="/portal">View My Appointments</a>
+          <Button onClick={() => navigate('/portal')} className="w-full">
+            View My Appointments
           </Button>
-          <Button variant="outline" asChild className="w-full">
-            <a href="/">Return to Home</a>
+          <Button variant="outline" onClick={() => navigate('/')} className="w-full">
+            Return to Home
           </Button>
         </div>
       </div>
@@ -140,8 +238,8 @@ export default function BookingConfirmation({ bookingData }: BookingConfirmation
             <User className="h-5 w-5 text-muted-foreground" />
             <div>
               <p className="font-medium">{bookingData.staff.name}</p>
-              {bookingData.staff.title && (
-                <p className="text-sm text-muted-foreground">{bookingData.staff.title}</p>
+              {bookingData.staff.email && (
+                <p className="text-sm text-muted-foreground">{bookingData.staff.email}</p>
               )}
             </div>
           </div>
@@ -193,59 +291,61 @@ export default function BookingConfirmation({ bookingData }: BookingConfirmation
       </Card>
 
       {/* Hair Information Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Hair Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {bookingData.intakeForm.hairType && (
-              <div>
-                <p className="text-sm text-muted-foreground">Hair Type</p>
-                <Badge variant="secondary">{bookingData.intakeForm.hairType}</Badge>
-              </div>
-            )}
-            {bookingData.intakeForm.hairTexture && (
-              <div>
-                <p className="text-sm text-muted-foreground">Hair Texture</p>
-                <Badge variant="secondary">{bookingData.intakeForm.hairTexture}</Badge>
-              </div>
-            )}
-            {bookingData.intakeForm.hairCondition && (
-              <div>
-                <p className="text-sm text-muted-foreground">Hair Condition</p>
-                <Badge variant="secondary">{bookingData.intakeForm.hairCondition}</Badge>
-              </div>
-            )}
-            {bookingData.intakeForm.scalpSensitivity && (
-              <div>
-                <p className="text-sm text-muted-foreground">Scalp Sensitivity</p>
-                <Badge variant="secondary">{bookingData.intakeForm.scalpSensitivity}</Badge>
-              </div>
-            )}
-          </div>
-
-          {bookingData.intakeForm.allergies && bookingData.intakeForm.allergies.length > 0 && (
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Allergies</p>
-              <div className="flex flex-wrap gap-1">
-                {bookingData.intakeForm.allergies.map((allergy: string, index: number) => (
-                  <Badge key={index} variant="destructive" className="text-xs">
-                    {allergy}
-                  </Badge>
-                ))}
-              </div>
+      {bookingData.intakeForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Hair Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {bookingData.intakeForm.hairType && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Hair Type</p>
+                  <Badge variant="secondary">{bookingData.intakeForm.hairType}</Badge>
+                </div>
+              )}
+              {bookingData.intakeForm.hairTexture && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Hair Texture</p>
+                  <Badge variant="secondary">{bookingData.intakeForm.hairTexture}</Badge>
+                </div>
+              )}
+              {bookingData.intakeForm.hairCondition && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Hair Condition</p>
+                  <Badge variant="secondary">{bookingData.intakeForm.hairCondition}</Badge>
+                </div>
+              )}
+              {bookingData.intakeForm.scalpSensitivity && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Scalp Sensitivity</p>
+                  <Badge variant="secondary">{bookingData.intakeForm.scalpSensitivity}</Badge>
+                </div>
+              )}
             </div>
-          )}
 
-          {bookingData.intakeForm.specialRequests && (
-            <div>
-              <p className="text-sm text-muted-foreground">Special Requests</p>
-              <p className="text-sm">{bookingData.intakeForm.specialRequests}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {bookingData.intakeForm.allergies && bookingData.intakeForm.allergies.length > 0 && (
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">Allergies</p>
+                <div className="flex flex-wrap gap-1">
+                  {bookingData.intakeForm.allergies.map((allergy: string, index: number) => (
+                    <Badge key={index} variant="destructive" className="text-xs">
+                      {allergy}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {bookingData.intakeForm.specialRequests && (
+              <div>
+                <p className="text-sm text-muted-foreground">Special Requests</p>
+                <p className="text-sm">{bookingData.intakeForm.specialRequests}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Total Cost */}
       <Card>

@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Calendar, User, LogOut, Menu } from 'lucide-react'
 import { Button } from '../ui/button'
 import { 
@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger 
 } from '../ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger } from '../ui/sheet'
-import { blink } from '../../blink/client'
+import { useAuth } from '../../hooks/useAuth'
 
 interface HeaderProps {
   user: any
@@ -16,9 +16,15 @@ interface HeaderProps {
 
 export default function Header({ user }: HeaderProps) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { signOut } = useAuth()
 
-  const handleLogout = () => {
-    blink.auth.logout()
+  const handleLogout = async () => {
+    await signOut()
+  }
+
+  const handleSignIn = () => {
+    navigate('/auth')
   }
 
   const navigation = [
@@ -97,7 +103,7 @@ export default function Header({ user }: HeaderProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button onClick={() => blink.auth.login()} variant="default">
+              <Button onClick={handleSignIn} variant="default">
                 Sign In
               </Button>
             )}

@@ -1,18 +1,9 @@
+import { useState, useEffect } from 'react'
 import { Star, Award, Clock } from 'lucide-react'
 import { Card, CardContent } from '../ui/card'
 import { Badge } from '../ui/badge'
-
-interface Staff {
-  id: string
-  name: string
-  title: string
-  bio: string
-  specialties: string[]
-  experience: string
-  rating: number
-  image: string
-  available: boolean
-}
+import { supabase, Staff } from '../../lib/supabase'
+import { toast } from 'sonner'
 
 interface StaffSelectionProps {
   selectedStaff: Staff | null
@@ -21,54 +12,50 @@ interface StaffSelectionProps {
 }
 
 export default function StaffSelection({ selectedStaff, onStaffSelect, service }: StaffSelectionProps) {
-  const staff: Staff[] = [
-    {
-      id: 'julio-casillas',
-      name: 'Julio Casillas',
-      title: 'Master Stylist & Owner',
-      bio: 'With over 15 years of experience, Julio specializes in precision cuts and advanced color techniques. He has trained with top stylists in New York and Paris.',
-      specialties: ['Precision Cuts', 'Color Correction', 'Balayage', 'Keratin Treatments'],
-      experience: '15+ years',
-      rating: 5.0,
-      image: '/api/placeholder/150/150',
-      available: true
-    },
-    {
-      id: 'maria-santos',
-      name: 'Maria Santos',
-      title: 'Senior Colorist',
-      bio: 'Maria is our color specialist with a passion for creating stunning transformations. She excels in highlights, balayage, and creative color work.',
-      specialties: ['Highlights', 'Balayage', 'Creative Color', 'Color Correction'],
-      experience: '8+ years',
-      rating: 4.9,
-      image: '/api/placeholder/150/150',
-      available: true
-    },
-    {
-      id: 'david-kim',
-      name: 'David Kim',
-      title: 'Style Director',
-      bio: 'David brings modern techniques and classic styling expertise. He specializes in men\'s cuts and contemporary women\'s styles.',
-      specialties: ['Men\'s Cuts', 'Modern Styling', 'Beard Trimming', 'Wedding Styles'],
-      experience: '10+ years',
-      rating: 4.8,
-      image: '/api/placeholder/150/150',
-      available: true
-    },
-    {
-      id: 'sofia-rodriguez',
-      name: 'Sofia Rodriguez',
-      title: 'Treatment Specialist',
-      bio: 'Sofia focuses on hair health and restoration. She is certified in various treatment techniques and specializes in damaged hair recovery.',
-      specialties: ['Deep Treatments', 'Keratin', 'Hair Restoration', 'Scalp Care'],
-      experience: '6+ years',
-      rating: 4.9,
-      image: '/api/placeholder/150/150',
-      available: false
-    }
-  ]
+  const [staff, setStaff] = useState<Staff[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const availableStaff = staff.filter(member => member.available)
+  const fetchStaff = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+
+      if (error) {
+        toast.error('Failed to load staff')
+        console.error('Error fetching staff:', error)
+        return
+      }
+
+      setStaff(data || [])
+    } catch (error) {
+      toast.error('Failed to load staff')
+      console.error('Error fetching staff:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchStaff()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <div className="h-4 w-64 bg-muted animate-pulse rounded mx-auto" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-48 bg-muted animate-pulse rounded-lg" />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -79,7 +66,7 @@ export default function StaffSelection({ selectedStaff, onStaffSelect, service }
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {availableStaff.map((member) => {
+        {staff.map((member) => {
           const isSelected = selectedStaff?.id === member.id
 
           return (
@@ -96,11 +83,19 @@ export default function StaffSelection({ selectedStaff, onStaffSelect, service }
                 <div className="flex items-start space-x-4">
                   {/* Profile Image */}
                   <div className="flex-shrink-0">
-                    <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
-                      <span className="text-lg font-semibold text-secondary-foreground">
-                        {member.name.split(' ').map(n => n[0]).join('')}
-                      </span>
-                    </div>
+                    {member.image_url ? (
+                      <img
+                        src={member.image_url}
+                        alt={member.name}
+                        className="w-16 h-16 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
+                        <span className="text-lg font-semibold text-secondary-foreground">
+                          {member.name.split(' ').map(n => n[0]).join('')}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Staff Info */}
@@ -108,37 +103,45 @@ export default function StaffSelection({ selectedStaff, onStaffSelect, service }
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <h3 className="font-semibold text-foreground">{member.name}</h3>
-                        <p className="text-sm text-muted-foreground">{member.title}</p>
+                        {member.email && (
+                          <p className="text-sm text-muted-foreground">{member.email}</p>
+                        )}
                       </div>
                       <div className="flex items-center space-x-1">
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm font-medium">{member.rating}</span>
+                        <span className="text-sm font-medium">5.0</span>
                       </div>
                     </div>
 
-                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                      {member.bio}
-                    </p>
+                    {member.bio && (
+                      <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                        {member.bio}
+                      </p>
+                    )}
 
-                    {/* Experience */}
-                    <div className="flex items-center space-x-1 mb-3">
-                      <Award className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">{member.experience} experience</span>
-                    </div>
+                    {/* Phone */}
+                    {member.phone && (
+                      <div className="flex items-center space-x-1 mb-3">
+                        <Award className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">{member.phone}</span>
+                      </div>
+                    )}
 
                     {/* Specialties */}
-                    <div className="flex flex-wrap gap-1">
-                      {member.specialties.slice(0, 3).map((specialty, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs">
-                          {specialty}
-                        </Badge>
-                      ))}
-                      {member.specialties.length > 3 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{member.specialties.length - 3} more
-                        </Badge>
-                      )}
-                    </div>
+                    {member.specialties && member.specialties.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {member.specialties.slice(0, 3).map((specialty, index) => (
+                          <Badge key={index} variant="secondary" className="text-xs">
+                            {specialty}
+                          </Badge>
+                        ))}
+                        {member.specialties.length > 3 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{member.specialties.length - 3} more
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -154,7 +157,18 @@ export default function StaffSelection({ selectedStaff, onStaffSelect, service }
             ? 'ring-2 ring-primary bg-primary/5' 
             : 'hover:bg-accent/50'
         }`}
-        onClick={() => onStaffSelect({ id: 'any', name: 'Any Available Stylist' } as Staff)}
+        onClick={() => onStaffSelect({ 
+          id: 'any', 
+          name: 'Any Available Stylist',
+          email: null,
+          phone: null,
+          bio: null,
+          specialties: null,
+          image_url: null,
+          is_active: true,
+          created_at: '',
+          updated_at: ''
+        } as Staff)}
       >
         <CardContent className="p-6">
           <div className="flex items-center space-x-4">
@@ -180,13 +194,21 @@ export default function StaffSelection({ selectedStaff, onStaffSelect, service }
           <div className="flex items-center justify-between">
             <div>
               <span className="text-foreground font-medium">{selectedStaff.name}</span>
-              <p className="text-sm text-muted-foreground">{selectedStaff.title}</p>
+              {selectedStaff.email && (
+                <p className="text-sm text-muted-foreground">{selectedStaff.email}</p>
+              )}
             </div>
             <div className="flex items-center space-x-1">
               <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-              <span className="text-sm font-medium">{selectedStaff.rating}</span>
+              <span className="text-sm font-medium">5.0</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {staff.length === 0 && !loading && (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No staff members available at this time.</p>
         </div>
       )}
     </div>
